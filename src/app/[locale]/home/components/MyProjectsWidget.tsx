@@ -14,9 +14,9 @@ import Link from 'next/link'
 import { getSession, signOut } from 'next-auth/react'
 import { useTranslations } from 'next-intl'
 import { SW360Table, TableFooter } from 'next-sw360'
-import { ReactNode, useCallback, useEffect, useMemo, useState } from 'react'
-import { Form, InputGroup, Spinner } from 'react-bootstrap'
-import { FiSearch, FiX } from 'react-icons/fi'
+import { ReactNode, useEffect, useMemo, useState } from 'react'
+import { Button, Card, Collapse, Form, Spinner } from 'react-bootstrap'
+import { FiChevronDown, FiChevronUp } from 'react-icons/fi'
 import LicenseClearing from '@/components/LicenseClearing'
 import { Embedded, ErrorDetails, PageableQueryParam, PaginationMeta, Project } from '@/object-types'
 import MessageService from '@/services/message.service'
@@ -25,11 +25,51 @@ import HomeTableHeader from './HomeTableHeader'
 
 type EmbeddedProjects = Embedded<Project, 'sw360:projects'>
 
+interface ProjectFilters {
+    roles: {
+        creator: boolean
+        moderator: boolean
+        contributor: boolean
+        projectOwner: boolean
+        leadArchitect: boolean
+        projectResponsible: boolean
+        securityResponsible: boolean
+    }
+    clearingStates: {
+        open: boolean
+        closed: boolean
+        inProgress: boolean
+    }
+}
+
+interface ExtendedPageableQueryParam extends PageableQueryParam {
+    roles?: string
+    clearingStates?: string
+}
+
 export default function MyProjectsWidget(): ReactNode {
     const t = useTranslations('default')
     const [reload, setReload] = useState(false)
-    const [searchTerm, setSearchTerm] = useState<string>('')
-    const [searchQuery, setSearchQuery] = useState<string>('')
+    const [showFilters, setShowFilters] = useState(false)
+
+    const [filters, setFilters] = useState<ProjectFilters>({
+        roles: {
+            creator: true,
+            moderator: true,
+            contributor: true,
+            projectOwner: true,
+            leadArchitect: true,
+            projectResponsible: true,
+            securityResponsible: true,
+        },
+        clearingStates: {
+            open: true,
+            closed: true,
+            inProgress: true,
+        },
+    })
+
+    const [appliedFilters, setAppliedFilters] = useState<ProjectFilters>(filters)
 
     const columns = useMemo<ColumnDef<Project>[]>(
         () => [
@@ -81,17 +121,19 @@ export default function MyProjectsWidget(): ReactNode {
         ],
     )
 
-    const [pageableQueryParam, setPageableQueryParam] = useState<PageableQueryParam>({
+    const [pageableQueryParam, setPageableQueryParam] = useState<ExtendedPageableQueryParam>({
         page: 0,
         page_entries: 5,
         sort: '',
     })
+
     const [paginationMeta, setPaginationMeta] = useState<PaginationMeta | undefined>({
         size: 0,
         totalElements: 0,
         totalPages: 0,
         number: 0,
     })
+
     const [projectData, setProjectData] = useState<Project[]>(() => [])
     const memoizedData = useMemo(
         () => projectData,
@@ -101,19 +143,34 @@ export default function MyProjectsWidget(): ReactNode {
     )
     const [showProcessing, setShowProcessing] = useState(false)
 
-    useEffect(() => {
-        const timer = setTimeout(() => {
-            setSearchQuery(searchTerm)
-            setPageableQueryParam((prev) => ({
-                ...prev,
-                page: 0,
-            }))
-        }, 500)
+    const handleRoleChange = (role: keyof ProjectFilters['roles']) => {
+        setFilters((prev) => ({
+            ...prev,
+            roles: {
+                ...prev.roles,
+                [role]: !prev.roles[role],
+            },
+        }))
+    }
 
-        return () => clearTimeout(timer)
-    }, [
-        searchTerm,
-    ])
+    const handleClearingStateChange = (state: keyof ProjectFilters['clearingStates']) => {
+        setFilters((prev) => ({
+            ...prev,
+            clearingStates: {
+                ...prev.clearingStates,
+                [state]: !prev.clearingStates[state],
+            },
+        }))
+    }
+
+    const handleSearch = () => {
+        setAppliedFilters(filters)
+        setPageableQueryParam((prev) => ({
+            ...prev,
+            page: 0,
+        }))
+        setReload((prev) => !prev)
+    }
 
     useEffect(() => {
         const controller = new AbortController()
@@ -130,20 +187,42 @@ export default function MyProjectsWidget(): ReactNode {
                 if (CommonUtils.isNullOrUndefined(session)) return signOut()
 
                 const queryParams: Record<string, string> = {
-                    ...Object.fromEntries(
-                        Object.entries(pageableQueryParam).map(([key, value]) => [
-                            key,
-                            String(value),
-                        ]),
-                    ),
+                    page: String(pageableQueryParam.page),
+                    page_entries: String(pageableQueryParam.page_entries),
                 }
 
-                if (searchQuery.trim()) {
-                    queryParams.name = searchQuery.trim()
+                if (pageableQueryParam.sort) {
+                    queryParams.sort = pageableQueryParam.sort
                 }
 
-                const queryUrl = CommonUtils.createUrlWithParams(`projects/myprojects`, queryParams)
+                const selectedRoles = Object.entries(appliedFilters.roles)
+                    .filter(([_, isSelected]) => isSelected)
+                    .map(([role]) => role)
+
+                const allRolesSelected = selectedRoles.length === 7
+                if (!allRolesSelected && selectedRoles.length > 0) {
+                    const roleParams = selectedRoles.map((role) => {
+                        return role.replace(/([A-Z])/g, '_$1').toUpperCase()
+                    })
+                    queryParams.roles = roleParams.join(',')
+                }
+
+                const selectedStates = Object.entries(appliedFilters.clearingStates)
+                    .filter(([_, isSelected]) => isSelected)
+                    .map(([state]) => state)
+
+                const allStatesSelected = selectedStates.length === 3
+                if (!allStatesSelected && selectedStates.length > 0) {
+                    const stateParams = selectedStates.map((state) => {
+                        if (state === 'inProgress') return 'IN_PROGRESS'
+                        return state.toUpperCase()
+                    })
+                    queryParams.clearingStates = stateParams.join(',')
+                }
+
+                const queryUrl = CommonUtils.createUrlWithParams('projects/myprojects', queryParams)
                 const response = await ApiUtils.GET(queryUrl, session.user.access_token, signal)
+
                 if (response.status !== StatusCodes.OK) {
                     const err = (await response.json()) as ErrorDetails
                     throw new Error(err.message)
@@ -171,8 +250,8 @@ export default function MyProjectsWidget(): ReactNode {
         return () => controller.abort()
     }, [
         pageableQueryParam,
-        searchQuery,
         reload,
+        appliedFilters,
     ])
 
     const table = useReactTable({
@@ -180,7 +259,6 @@ export default function MyProjectsWidget(): ReactNode {
         columns,
         getCoreRowModel: getCoreRowModel(),
 
-        // table state config
         state: {
             pagination: {
                 pageIndex: pageableQueryParam.page,
@@ -188,19 +266,18 @@ export default function MyProjectsWidget(): ReactNode {
             },
             sorting: [
                 {
-                    id: pageableQueryParam.sort.split(',')[0],
+                    id: pageableQueryParam.sort.split(',')[0] || '',
                     desc: pageableQueryParam.sort.split(',')[1] === 'desc',
                 },
             ],
         },
 
-        // server side sorting config
         manualSorting: true,
         onSortingChange: (updater) => {
             setPageableQueryParam((prev) => {
                 const prevSorting: SortingState = [
                     {
-                        id: prev.sort.split(',')[0],
+                        id: prev.sort.split(',')[0] || '',
                         desc: prev.sort.split(',')[1] === 'desc',
                     },
                 ]
@@ -222,7 +299,6 @@ export default function MyProjectsWidget(): ReactNode {
             })
         },
 
-        // server side pagination config
         manualPagination: true,
         pageCount: paginationMeta?.totalPages ?? 1,
         onPaginationChange: (updater) => {
@@ -236,7 +312,7 @@ export default function MyProjectsWidget(): ReactNode {
 
             setPageableQueryParam((prev) => ({
                 ...prev,
-                page: next.pageIndex + 1,
+                page: next.pageIndex,
                 page_entries: next.pageSize,
             }))
         },
@@ -246,58 +322,138 @@ export default function MyProjectsWidget(): ReactNode {
         },
     })
 
-    const handleClearSearch = useCallback(() => {
-        setSearchTerm('')
-        setSearchQuery('')
-    }, [])
-
     return (
         <div>
             <HomeTableHeader
                 title={t('My Projects')}
                 setReload={setReload}
             />
-            <div className='mb-3'>
-                <InputGroup className='mb-2'>
-                    <InputGroup.Text>
-                        <FiSearch />
-                    </InputGroup.Text>
-                    <Form.Control
-                        type='text'
-                        placeholder={t('Search projects by name...')}
-                        value={searchTerm}
-                        onChange={(e) => setSearchTerm(e.target.value)}
-                        aria-label={t('Filter projects')}
-                    />
-                    {searchTerm && (
-                        <InputGroup.Text
-                            onClick={handleClearSearch}
-                            style={{
-                                cursor: 'pointer',
-                            }}
-                            title={t('Clear search')}
-                            role='button'
-                            tabIndex={0}
-                            onKeyDown={(e) => {
-                                if (e.key === 'Enter' || e.key === ' ') {
-                                    handleClearSearch()
-                                }
-                            }}
-                        >
-                            <FiX />
-                        </InputGroup.Text>
-                    )}
-                </InputGroup>
-            </div>
+
+            <Card className='mb-3 border-0 shadow-sm'>
+                <Card.Header
+                    onClick={() => setShowFilters(!showFilters)}
+                    style={{
+                        cursor: 'pointer',
+                        userSelect: 'none',
+                        backgroundColor: '#f8f9fa',
+                        borderBottom: showFilters ? '1px solid #dee2e6' : 'none',
+                    }}
+                    className='d-flex justify-content-between align-items-center py-2'
+                >
+                    <strong>{t('MY PROJECTS')}</strong>
+                    {showFilters ? <FiChevronUp size={20} /> : <FiChevronDown size={20} />}
+                </Card.Header>
+                <Collapse in={showFilters}>
+                    <Card.Body className='p-3'>
+                        <div className='row'>
+                            <div className='col-md-6 mb-3'>
+                                <h6 className='mb-3'>{t('Role In Project')}</h6>
+                                <div className='d-flex flex-column gap-2'>
+                                    <Form.Check
+                                        type='checkbox'
+                                        id='filter-creator'
+                                        label={t('Creator')}
+                                        checked={filters.roles.creator}
+                                        onChange={() => handleRoleChange('creator')}
+                                    />
+                                    <Form.Check
+                                        type='checkbox'
+                                        id='filter-moderator'
+                                        label={t('Moderator')}
+                                        checked={filters.roles.moderator}
+                                        onChange={() => handleRoleChange('moderator')}
+                                    />
+                                    <Form.Check
+                                        type='checkbox'
+                                        id='filter-contributor'
+                                        label={t('Contributor')}
+                                        checked={filters.roles.contributor}
+                                        onChange={() => handleRoleChange('contributor')}
+                                    />
+                                    <Form.Check
+                                        type='checkbox'
+                                        id='filter-project-owner'
+                                        label={t('Project Owner')}
+                                        checked={filters.roles.projectOwner}
+                                        onChange={() => handleRoleChange('projectOwner')}
+                                    />
+                                    <Form.Check
+                                        type='checkbox'
+                                        id='filter-lead-architect'
+                                        label={t('Lead Architect')}
+                                        checked={filters.roles.leadArchitect}
+                                        onChange={() => handleRoleChange('leadArchitect')}
+                                    />
+                                    <Form.Check
+                                        type='checkbox'
+                                        id='filter-project-responsible'
+                                        label={t('Project Responsible')}
+                                        checked={filters.roles.projectResponsible}
+                                        onChange={() => handleRoleChange('projectResponsible')}
+                                    />
+                                    <Form.Check
+                                        type='checkbox'
+                                        id='filter-security-responsible'
+                                        label={t('Security Responsible')}
+                                        checked={filters.roles.securityResponsible}
+                                        onChange={() => handleRoleChange('securityResponsible')}
+                                    />
+                                </div>
+                            </div>
+
+                            <div className='col-md-6 mb-3'>
+                                <h6 className='mb-3'>{t('Clearing State')}</h6>
+                                <div className='d-flex flex-column gap-2'>
+                                    <Form.Check
+                                        type='checkbox'
+                                        id='filter-open'
+                                        label={t('Open')}
+                                        checked={filters.clearingStates.open}
+                                        onChange={() => handleClearingStateChange('open')}
+                                    />
+                                    <Form.Check
+                                        type='checkbox'
+                                        id='filter-closed'
+                                        label={t('Closed')}
+                                        checked={filters.clearingStates.closed}
+                                        onChange={() => handleClearingStateChange('closed')}
+                                    />
+                                    <Form.Check
+                                        type='checkbox'
+                                        id='filter-in-progress'
+                                        label={t('In Progress')}
+                                        checked={filters.clearingStates.inProgress}
+                                        onChange={() => handleClearingStateChange('inProgress')}
+                                    />
+                                </div>
+                            </div>
+                        </div>
+
+                        <div className='d-flex justify-content-center mt-3'>
+                            <Button
+                                variant='warning'
+                                onClick={handleSearch}
+                                className='px-5'
+                                style={{
+                                    backgroundColor: '#ff9800',
+                                    borderColor: '#ff9800',
+                                    color: '#000',
+                                }}
+                            >
+                                {t('Search')}
+                            </Button>
+                        </div>
+                    </Card.Body>
+                </Collapse>
+            </Card>
+
             <div className='mb-3'>
                 {pageableQueryParam && table && paginationMeta ? (
                     <>
                         <SW360Table
                             table={table}
                             showProcessing={showProcessing}
-                            noRecordsFoundMessage={
-                                searchQuery ? t('No projects found matching your search') : t('NoProjectsFound')
-                            }
+                            noRecordsFoundMessage={t('No Projects Found')}
                         />
                         <TableFooter
                             pageableQueryParam={pageableQueryParam}
