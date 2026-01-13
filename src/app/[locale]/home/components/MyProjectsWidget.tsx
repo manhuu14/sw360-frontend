@@ -14,8 +14,9 @@ import Link from 'next/link'
 import { getSession, signOut } from 'next-auth/react'
 import { useTranslations } from 'next-intl'
 import { SW360Table, TableFooter } from 'next-sw360'
-import { ReactNode, useEffect, useMemo, useState } from 'react'
-import { Spinner } from 'react-bootstrap'
+import { ReactNode, useCallback, useEffect, useMemo, useState } from 'react'
+import { Form, InputGroup, Spinner } from 'react-bootstrap'
+import { FiSearch, FiX } from 'react-icons/fi'
 import LicenseClearing from '@/components/LicenseClearing'
 import { Embedded, ErrorDetails, PageableQueryParam, PaginationMeta, Project } from '@/object-types'
 import MessageService from '@/services/message.service'
@@ -27,6 +28,8 @@ type EmbeddedProjects = Embedded<Project, 'sw360:projects'>
 export default function MyProjectsWidget(): ReactNode {
     const t = useTranslations('default')
     const [reload, setReload] = useState(false)
+    const [searchTerm, setSearchTerm] = useState<string>('')
+    const [searchQuery, setSearchQuery] = useState<string>('')
 
     const columns = useMemo<ColumnDef<Project>[]>(
         () => [
@@ -99,6 +102,20 @@ export default function MyProjectsWidget(): ReactNode {
     const [showProcessing, setShowProcessing] = useState(false)
 
     useEffect(() => {
+        const timer = setTimeout(() => {
+            setSearchQuery(searchTerm)
+            setPageableQueryParam((prev) => ({
+                ...prev,
+                page: 0,
+            }))
+        }, 500)
+
+        return () => clearTimeout(timer)
+    }, [
+        searchTerm,
+    ])
+
+    useEffect(() => {
         const controller = new AbortController()
         const signal = controller.signal
 
@@ -112,15 +129,20 @@ export default function MyProjectsWidget(): ReactNode {
                 const session = await getSession()
                 if (CommonUtils.isNullOrUndefined(session)) return signOut()
 
-                const queryUrl = CommonUtils.createUrlWithParams(
-                    `projects/myprojects`,
-                    Object.fromEntries(
+                const queryParams: Record<string, string> = {
+                    ...Object.fromEntries(
                         Object.entries(pageableQueryParam).map(([key, value]) => [
                             key,
                             String(value),
                         ]),
                     ),
-                )
+                }
+
+                if (searchQuery.trim()) {
+                    queryParams.name = searchQuery.trim()
+                }
+
+                const queryUrl = CommonUtils.createUrlWithParams(`projects/myprojects`, queryParams)
                 const response = await ApiUtils.GET(queryUrl, session.user.access_token, signal)
                 if (response.status !== StatusCodes.OK) {
                     const err = (await response.json()) as ErrorDetails
@@ -149,6 +171,7 @@ export default function MyProjectsWidget(): ReactNode {
         return () => controller.abort()
     }, [
         pageableQueryParam,
+        searchQuery,
         reload,
     ])
 
@@ -223,6 +246,11 @@ export default function MyProjectsWidget(): ReactNode {
         },
     })
 
+    const handleClearSearch = useCallback(() => {
+        setSearchTerm('')
+        setSearchQuery('')
+    }, [])
+
     return (
         <div>
             <HomeTableHeader
@@ -230,12 +258,46 @@ export default function MyProjectsWidget(): ReactNode {
                 setReload={setReload}
             />
             <div className='mb-3'>
+                <InputGroup className='mb-2'>
+                    <InputGroup.Text>
+                        <FiSearch />
+                    </InputGroup.Text>
+                    <Form.Control
+                        type='text'
+                        placeholder={t('Search projects by name...')}
+                        value={searchTerm}
+                        onChange={(e) => setSearchTerm(e.target.value)}
+                        aria-label={t('Filter projects')}
+                    />
+                    {searchTerm && (
+                        <InputGroup.Text
+                            onClick={handleClearSearch}
+                            style={{
+                                cursor: 'pointer',
+                            }}
+                            title={t('Clear search')}
+                            role='button'
+                            tabIndex={0}
+                            onKeyDown={(e) => {
+                                if (e.key === 'Enter' || e.key === ' ') {
+                                    handleClearSearch()
+                                }
+                            }}
+                        >
+                            <FiX />
+                        </InputGroup.Text>
+                    )}
+                </InputGroup>
+            </div>
+            <div className='mb-3'>
                 {pageableQueryParam && table && paginationMeta ? (
                     <>
                         <SW360Table
                             table={table}
                             showProcessing={showProcessing}
-                            noRecordsFoundMessage={t('NoProjectsFound')}
+                            noRecordsFoundMessage={
+                                searchQuery ? t('No projects found matching your search') : t('NoProjectsFound')
+                            }
                         />
                         <TableFooter
                             pageableQueryParam={pageableQueryParam}
