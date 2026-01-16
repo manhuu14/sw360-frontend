@@ -755,9 +755,9 @@ function EditProject({
                                                 <span
                                                     id='obligationsCount'
                                                     className={
-                                                        obligationsNonOpenCount === 0
-                                                            ? 'badge obligations-badge--danger'
-                                                            : 'obligations-badge'
+                                                        obligationsNonOpenCount === obligationsTotal
+                                                            ? 'obligations-badge'
+                                                            : 'badge obligations-badge--danger'
                                                     }
                                                     aria-live='polite'
                                                 >
