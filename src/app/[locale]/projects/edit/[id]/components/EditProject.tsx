@@ -754,11 +754,7 @@ function EditProject({
                                                 <span className='me-2'>{t('Obligations')}</span>
                                                 <span
                                                     id='obligationsCount'
-                                                    className={
-                                                        obligationsNonOpenCount === obligationsTotal
-                                                            ? 'obligations-badge'
-                                                            : 'badge obligations-badge--danger'
-                                                    }
+                                                    className='badge obligations-badge--danger'
                                                     aria-live='polite'
                                                 >
                                                     {`${obligationsNonOpenCount} / ${obligationsTotal}`}
