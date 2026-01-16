@@ -1746,3 +1746,23 @@ input[checked] + .slider:before {
     color: #ffffff !important;
     border: none !important;
 }
+
+.filter-card-header {
+    cursor: pointer;
+    user-select: none;
+    background-color: #f8f9fa;
+}
+
+.filter-card-header-with-border {
+    border-bottom: 1px solid #dee2e6;
+}
+
+.search-button-warning {
+    background-color: #ff9800 !important;
+    border-color: #ff9800 !important;
+    color: #000 !important;
+}
+
+.search-button-warning:hover {
+    color: #fff !important;
+}

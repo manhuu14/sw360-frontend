@@ -332,13 +332,7 @@ export default function MyProjectsWidget(): ReactNode {
             <Card className='mb-3 border-0 shadow-sm'>
                 <Card.Header
                     onClick={() => setShowFilters(!showFilters)}
-                    style={{
-                        cursor: 'pointer',
-                        userSelect: 'none',
-                        backgroundColor: '#f8f9fa',
-                        borderBottom: showFilters ? '1px solid #dee2e6' : 'none',
-                    }}
-                    className='d-flex justify-content-between align-items-center py-2'
+                    className={`filter-card-header ${showFilters ? 'filter-card-header-with-border' : ''} d-flex justify-content-between align-items-center py-2`}
                 >
                     <strong>{t('MY PROJECTS')}</strong>
                     {showFilters ? <FiChevronUp size={20} /> : <FiChevronDown size={20} />}
@@ -433,12 +427,7 @@ export default function MyProjectsWidget(): ReactNode {
                             <Button
                                 variant='warning'
                                 onClick={handleSearch}
-                                className='px-5'
-                                style={{
-                                    backgroundColor: '#ff9800',
-                                    borderColor: '#ff9800',
-                                    color: '#000',
-                                }}
+                                className='px-5 search-button-warning'
                             >
                                 {t('Search')}
                             </Button>
